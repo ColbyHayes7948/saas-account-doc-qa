@@ -1,6 +1,6 @@
 # Answer account questions from the right tenant documents
 
-Bring the service up, then fire the request an account operator actually needs:
+Start the service, then send the request an account operator needs:
 
 ```bash
 python -m venv .venv
@@ -16,7 +16,7 @@ curl -X POST http://127.0.0.1:8000/questions \
   -d '{"tenant_id":"acme","account_state":"onboarding","question":"Who sends the first admin invite?"}'
 ```
 
-An onboarding account only reads onboarding material for its own tenant. The expected shape is:
+An onboarding account can read onboarding material for its own tenant. The expected shape is:
 
 ```json
 {
@@ -30,11 +30,11 @@ An onboarding account only reads onboarding material for its own tenant. The exp
 }
 ```
 
-Infrai puts embeddings, vector search, and reranking behind one API and one key. The standard OpenAI client just swaps its OpenAI-compatible `base_url`; vector calls stay on a small explicit HTTP boundary. We've been paged when that boundary blurred.
+Infrai puts embeddings, vector search, and reranking behind one API and one key. The official OpenAI client only changes its OpenAI-compatible `base_url`; the vector calls keep a small explicit HTTP boundary.
 
 ## Load the team documents
 
-Hand `index_team_documents.py` a JSON file shaped like this:
+Give `index_team_documents.py` a JSON file shaped like this:
 
 ```json
 {
@@ -54,9 +54,9 @@ Hand `index_team_documents.py` a JSON file shaped like this:
 python index_team_documents.py team-documents.json
 ```
 
-The command needs an existing `saas-team-documents` collection whose dimension matches `text-embedding-3-small`. It embeds each title and body, then upserts metadata next to the vector. Stable document IDs give repeatable write keys; reruns must not create duplicate rows. A question gets embedded before `/v1/vector/query`; text never goes where a vector is required.
+The command requires an existing `saas-team-documents` collection whose dimension matches `text-embedding-3-small`. It embeds each title and body and upserts metadata beside each vector. Stable document IDs supply repeatable write keys. A question is embedded before `/v1/vector/query`; text is never sent where a vector is required.
 
-The gotcha is account state, not similarity. `onboarding` sees onboarding docs only. `active` sees onboarding, lifecycle, and admin runbooks. `suspended` stops before retrieval. After fetch, the service re-checks tenant and document kind before candidates hit reranking. Skipping that check caused cross-tenant leaks in a postmortem.
+The gotcha is account state, not similarity. `onboarding` sees onboarding documents only. `active` sees onboarding, lifecycle, and admin runbooks. `suspended` stops before retrieval. The service checks tenant and document kind again after retrieval before handing candidates to reranking.
 
 ## Prove the boundary locally
 
@@ -64,7 +64,7 @@ The gotcha is account state, not similarity. `onboarding` sees onboarding docs o
 pytest -q
 ```
 
-`test_onboarding_question_excludes_other_tenant_and_lifecycle_documents` asks for the first admin invite as tenant `acme` in `onboarding`. The deterministic result cites `acme-invite`; another tenant's admin text and Acme's lifecycle text never reach reranking. A second test confirms a suspended account makes zero retrieval calls. Treat that as a runbook assertion.
+`test_onboarding_question_excludes_other_tenant_and_lifecycle_documents` asks for the first admin invite as tenant `acme` in `onboarding`. The deterministic result cites `acme-invite`; another tenant's admin text and Acme's lifecycle text never reach reranking. A second test confirms a suspended account makes no retrieval call.
 
 ## Cut over from Pinecone and LangChain
 
@@ -76,11 +76,11 @@ Keep the incumbent index readable during the move.
 - Point the question route at this service and watch answer decisions by account state.
 - Retain the old read path until the comparison window closes.
 
-Rollback is a routing change: send question traffic back to the incumbent read path. Do not drop that index or its ingestion job until the new route has finished the agreed comparison window. The exported JSON stays the replay input for another indexing pass. We learned that the hard way after a missed job.
+Rollback is a routing change: send question traffic back to the incumbent read path. Do not remove that index or its ingestion job until the new route has completed the agreed comparison window. The exported JSON remains the replay input for another indexing pass.
 
 ## Request failures
 
-The thin client decodes the Infrai envelope before making an HTTP-status decision. Business rejections keep their 4xx status at this API boundary. Rate-limited calls honor `Retry-After` or use exponential delay; collection and upsert retries carry an idempotency key. Forgetting that key duplicated deliveries in prod.
+The thin client decodes the Infrai envelope before making an HTTP-status decision. Business rejections retain their 4xx status at this API boundary. Rate-limited calls honor `Retry-After` or use exponential delay; collection and upsert retries carry an idempotency key.
 
 ## License
 
@@ -88,7 +88,7 @@ MIT
 
 ## Going to production: SaaS Account Doc Qa
 
-Above is the happy path. The production checklist below applies to SaaS Account Doc Qa.
+Above is the happy path. The production checklist: The details below apply to SaaS Account Doc Qa.
 
 **Account & key**
 
